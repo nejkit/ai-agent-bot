@@ -8,14 +8,8 @@ type TelegramClient struct {
 	api *tgbotapi.BotAPI
 }
 
-func NewTelegramClient(token string) (*TelegramClient, error) {
-	api, err := tgbotapi.NewBotAPI(token)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return &TelegramClient{api: api}, nil
+func NewTelegramClient(api *tgbotapi.BotAPI) *TelegramClient {
+	return &TelegramClient{api: api}
 }
 
 func (t *TelegramClient) SendReplyMessageForChatId(chatId int64, messageToReply int, text string) (int, error) {

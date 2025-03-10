@@ -44,6 +44,10 @@ type TelegramHandler struct {
 	tgCLi            telegramClient
 }
 
+func NewTelegramHandler(updates tgbotapi.UpdatesChannel, chatManagers map[int64]manager.ChatManager, aiCli openAICli, ticketProvider ticketProvider, messagesProvider messagesProvider, tgCLi telegramClient) *TelegramHandler {
+	return &TelegramHandler{updates: updates, chatManagers: chatManagers, aiCli: aiCli, ticketProvider: ticketProvider, messagesProvider: messagesProvider, tgCLi: tgCLi}
+}
+
 func (t *TelegramHandler) StartHandleTgUpdates(ctx context.Context) {
 	for {
 		select {

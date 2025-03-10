@@ -18,7 +18,7 @@ type ExternalChatTicketData struct {
 	Id     string
 	ChatId int64
 
-	ReplyMessageId int64
+	ReplyMessageId int
 
 	Status TicketStatus
 	Action TicketAction
@@ -27,7 +27,7 @@ type ExternalChatTicketData struct {
 	ChatContext []MessageData
 
 	RequestMessage   string
-	RequestMessageId int64
+	RequestMessageId int
 
 	ResponseMessage string // message from ai chat to telegram chat
 

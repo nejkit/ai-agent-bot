@@ -4,11 +4,16 @@ import (
 	"context"
 	"errors"
 	"github.com/nejkit/ai-agent-bot/models"
+	"sync"
 )
 
+type telegramClient interface {
+	EditReplyMessageForChatId(chatId int64, messageId int, text string) error
+}
+
 type messagesProvider interface {
-	SetChatNonce(chatId int64, nonce int64) error
-	GetChatNonce(chatId int64) (int64, error)
+	SetChatNonce(chatId int64, nonce int) error
+	GetChatNonce(chatId int64) (int, error)
 	GetMessagesForChatId(chatId int64) ([]models.MessageData, error)
 	SaveMessagesForChatId(chatId int64, messages []models.MessageData) error
 }
@@ -26,15 +31,19 @@ type openAICli interface {
 
 type ChatManager struct {
 	aiCli           openAICli
+	tgCli           telegramClient
 	messagesStorage messagesProvider
 	ticketStorage   ticketProvider
+	mtx             *sync.RWMutex
 }
 
-func NewChatManager(aiCli openAICli, messagesStorage messagesProvider, ticketStorage ticketProvider) *ChatManager {
-	return &ChatManager{aiCli: aiCli, messagesStorage: messagesStorage, ticketStorage: ticketStorage}
+func NewChatManager(aiCli openAICli, messagesStorage messagesProvider, ticketStorage ticketProvider, tgCli telegramClient) *ChatManager {
+	return &ChatManager{aiCli: aiCli, messagesStorage: messagesStorage, ticketStorage: ticketStorage, tgCli: tgCli, mtx: &sync.RWMutex{}}
 }
 
 func (c *ChatManager) ProcessValidationAction(ticketId string) error {
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
 	ticketInfo, err := c.ticketStorage.GetTicketById(ticketId)
 
 	if err != nil {
@@ -194,6 +203,8 @@ func (c *ChatManager) ProcessActionSendToAi(ticketId string) error {
 }
 
 func (c *ChatManager) ProcessActionSendToTg(ticketId string) error {
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
 	ticketInfo, err := c.ticketStorage.GetTicketById(ticketId)
 
 	if err != nil {
@@ -221,11 +232,19 @@ func (c *ChatManager) ProcessActionSendToTg(ticketId string) error {
 		return err
 	}
 
-	err = c.messagesStorage.SaveMessagesForChatId(ticketInfo.ChatId, ticketInfo.ChatContext)
+	newNonce := ticketInfo.ReplyMessageId
+
+	if ticketInfo.ReplyMessageId-ticketInfo.RequestMessageId > 1 {
+		newNonce = ticketInfo.RequestMessageId
+	}
+
+	err = c.messagesStorage.SetChatNonce(ticketInfo.ChatId, newNonce)
 
 	if err != nil {
 		return err
 	}
+
+	err = c.tgCli.EditReplyMessageForChatId(ticketInfo.ChatId, ticketInfo.ReplyMessageId, ticketInfo.ResponseMessage)
 
 	return nil
 }

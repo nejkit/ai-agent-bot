@@ -16,11 +16,11 @@ func NewMessageProvider(cli *redis.Client) *MessageProvider {
 	return &MessageProvider{cli: cli}
 }
 
-func (m *MessageProvider) SetChatNonce(chatId int64, nonce int64) error {
+func (m *MessageProvider) SetChatNonce(chatId int64, nonce int) error {
 	return m.cli.Set(getMessagesNonceKey(chatId), nonce, 0).Err()
 }
 
-func (m *MessageProvider) GetChatNonce(chatId int64) (int64, error) {
+func (m *MessageProvider) GetChatNonce(chatId int64) (int, error) {
 	data, err := m.cli.Get(getMessagesNonceKey(chatId)).Result()
 
 	if errors.Is(err, redis.Nil) {
@@ -31,7 +31,13 @@ func (m *MessageProvider) GetChatNonce(chatId int64) (int64, error) {
 		return 0, err
 	}
 
-	return strconv.ParseInt(data, 10, 64)
+	nonce, err := strconv.ParseInt(data, 10, 32)
+
+	if err != nil {
+		return 0, err
+	}
+
+	return int(nonce), nil
 }
 
 func (m *MessageProvider) GetMessagesForChatId(chatId int64) ([]models.MessageData, error) {

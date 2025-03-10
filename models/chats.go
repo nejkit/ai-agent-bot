@@ -1,32 +1,34 @@
 package models
 
-type ChatModel struct {
-	ChatId        int64
-	CreatorUserId int64
+import "time"
 
-	ExternalGroupChatId     string           // group chats
-	ExternalPersonalChatIds map[int64]string // individual chats
-
-	ChatHash string // last formed hash by creator user id? or any participant
+type MessageData struct {
+	Text      string
+	CreatedBy MessageType
 }
 
-type ChatHistoryModel struct {
-	ChatId  int64
-	Hash    string
-	Created int64
-}
+type MessageType int
+
+const (
+	MessageTypeUser = iota
+	MessageTypeAssistant
+)
 
 type ExternalChatTicketData struct {
-	Id              string
-	ChatId          int64
-	CreatedByUserId int64
+	Id     string
+	ChatId int64
+
+	ReplyMessageId int64
 
 	Status TicketStatus
 	Action TicketAction
 	Type   TicketType
 
-	RequestMessage  string // message from telegram chat to ai
-	ReplyId         int64  // message id on chat or report recipient
+	ChatContext []MessageData
+
+	RequestMessage   string
+	RequestMessageId int64
+
 	ResponseMessage string // message from ai chat to telegram chat
 
 	ErrorMessage string // if status failed
@@ -34,6 +36,10 @@ type ExternalChatTicketData struct {
 	RetryCount int   // retry count if status failed inc
 	Updated    int64 // when ticket status/action updated, unix now
 	Expired    int64 //when ticket status/action updated, change by settings
+}
+
+func (t *ExternalChatTicketData) UpdateTicketExpiration() {
+	t.Expired = time.Now().Add(time.Hour).UnixMilli()
 }
 
 type TicketStatus int
@@ -50,6 +56,7 @@ const (
 
 const (
 	TicketActionValidation TicketAction = iota
+	TicketActionCollectContext
 	TicketActionSendAiRequest
 	TicketActionSendTgResponse
 )

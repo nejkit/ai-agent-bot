@@ -3,13 +3,15 @@ module github.com/nejkit/ai-agent-bot
 go 1.23.4
 
 require (
+	github.com/go-redis/redis v6.15.9+incompatible
 	github.com/go-telegram-bot-api/telegram-bot-api v4.6.4+incompatible
+	github.com/google/uuid v1.6.0
 	github.com/openai/openai-go v0.1.0-alpha.60
 )
 
 require (
-	github.com/go-redis/redis v6.15.9+incompatible // indirect
-	github.com/redis/go-redis v6.15.9+incompatible // indirect
+	github.com/onsi/ginkgo v1.16.5 // indirect
+	github.com/onsi/gomega v1.36.2 // indirect
 	github.com/technoweenie/multipartstreamer v1.0.1 // indirect
 	github.com/tidwall/gjson v1.14.4 // indirect
 	github.com/tidwall/match v1.1.1 // indirect

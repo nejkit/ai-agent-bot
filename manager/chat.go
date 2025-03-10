@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/nejkit/ai-agent-bot/models"
+	"github.com/nejkit/ai-agent-bot/storage"
 	"sync"
 )
 
@@ -119,8 +120,12 @@ func (c *ChatManager) ProcessCollectContextAction(ticketId string) error {
 
 	chatCtx, err := c.messagesStorage.GetMessagesForChatId(ticketInfo.ChatId)
 
-	if err != nil {
+	if err != nil && !errors.Is(err, storage.ErrorNotFound) {
 		return err
+	}
+
+	if errors.Is(err, storage.ErrorNotFound) {
+		chatCtx = make([]models.MessageData, 0)
 	}
 
 	chatCtx = append(chatCtx, models.MessageData{
@@ -130,6 +135,7 @@ func (c *ChatManager) ProcessCollectContextAction(ticketId string) error {
 
 	ticketInfo.Action = models.TicketActionSendAiRequest
 	ticketInfo.Status = models.TicketStatusNew
+	ticketInfo.ChatContext = chatCtx
 	ticketInfo.UpdateTicketExpiration()
 
 	if err = c.ticketStorage.SaveTicket(ticketInfo); err != nil {
@@ -173,6 +179,7 @@ func (c *ChatManager) ProcessActionSendToAi(ticketId string) error {
 			}
 
 			ticketInfo.Status = models.TicketStatusNew
+			ticketInfo.ErrorMessage = err.Error()
 			ticketInfo.RetryCount++
 			ticketInfo.UpdateTicketExpiration()
 
@@ -215,7 +222,7 @@ func (c *ChatManager) ProcessActionSendToTg(ticketId string) error {
 		return errors.New("ticket status is not new")
 	}
 
-	if ticketInfo.Action != models.TicketActionSendAiRequest {
+	if ticketInfo.Action != models.TicketActionSendTgResponse {
 		return errors.New("ticket action is not valid")
 	}
 
@@ -232,10 +239,10 @@ func (c *ChatManager) ProcessActionSendToTg(ticketId string) error {
 		return err
 	}
 
-	newNonce := ticketInfo.ReplyMessageId
+	newNonce := ticketInfo.ReplyMessageId + 1
 
 	if ticketInfo.ReplyMessageId-ticketInfo.RequestMessageId > 1 {
-		newNonce = ticketInfo.RequestMessageId
+		newNonce = ticketInfo.RequestMessageId + 1
 	}
 
 	err = c.messagesStorage.SetChatNonce(ticketInfo.ChatId, newNonce)
@@ -246,5 +253,5 @@ func (c *ChatManager) ProcessActionSendToTg(ticketId string) error {
 
 	err = c.tgCli.EditReplyMessageForChatId(ticketInfo.ChatId, ticketInfo.ReplyMessageId, ticketInfo.ResponseMessage)
 
-	return nil
+	return c.ticketStorage.DeleteTicket(ticketId)
 }

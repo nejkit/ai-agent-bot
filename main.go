@@ -2,10 +2,11 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"github.com/go-redis/redis"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
-	config2 "github.com/nejkit/ai-agent-bot/config"
-	handler2 "github.com/nejkit/ai-agent-bot/handler"
+	"github.com/nejkit/ai-agent-bot/config"
+	"github.com/nejkit/ai-agent-bot/handler"
 	"github.com/nejkit/ai-agent-bot/manager"
 	"github.com/nejkit/ai-agent-bot/provider"
 	"github.com/nejkit/ai-agent-bot/storage"
@@ -15,16 +16,7 @@ import (
 )
 
 func main() {
-	config := config2.AppConfig{
-		TelegramConfig: config2.TelegramConfig{
-			Token: "",
-		},
-		RedisConfig: config2.RedisConfig{
-			Addr:     "",
-			Password: "",
-			DB:       0,
-		},
-	}
+	config := config.AppConfig{}
 
 	redisClient := redis.NewClient(&redis.Options{
 		Addr:     config.RedisConfig.Addr,
@@ -55,8 +47,11 @@ func main() {
 		return
 	}
 
-	handler := handler2.NewTelegramHandler(updChan, make(map[int64]manager.ChatManager), openAiCli, ticketStorage, messageStorage, tgCli)
+	handle := handler.NewTelegramHandler(updChan, make(map[int64]manager.ChatManager), openAiCli, ticketStorage, messageStorage, tgCli)
 
-	go handler.StartProcessTickets(context.Background())
-	go handler.StartHandleTgUpdates(context.Background())
+	go handle.StartProcessTickets(context.Background())
+
+	fmt.Println("Start app")
+	handle.StartHandleTgUpdates(context.Background())
+
 }

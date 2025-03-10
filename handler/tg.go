@@ -58,7 +58,13 @@ func (t *TelegramHandler) StartHandleTgUpdates(ctx context.Context) {
 				return
 			}
 
+			fmt.Printf("Update: %v \n", upd)
+
 			if upd.Message == nil {
+				continue
+			}
+
+			if upd.Message.From.ID != 1 {
 				continue
 			}
 
@@ -69,6 +75,8 @@ func (t *TelegramHandler) StartHandleTgUpdates(ctx context.Context) {
 			if !exist {
 				chatManager = *manager.NewChatManager(t.aiCli, t.messagesProvider, t.ticketProvider, t.tgCLi)
 				t.chatManagers[chatId] = chatManager
+
+				_ = t.messagesProvider.SetChatNonce(chatId, upd.Message.MessageID)
 			}
 
 			replyMsgId, err := t.tgCLi.SendReplyMessageForChatId(chatId, upd.Message.MessageID, "Your request queued...")

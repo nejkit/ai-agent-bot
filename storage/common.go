@@ -13,6 +13,10 @@ func getTicketQueueKey() string {
 	return "tickets:queue"
 }
 
+func getTicketPoolKey(chatId int64) string {
+	return fmt.Sprintf("tickets:pool:%d", chatId)
+}
+
 func getTicketKey(ticketId string) string {
 	return fmt.Sprintf("tickets:%s", ticketId)
 }

@@ -6,6 +6,7 @@ import (
 	"github.com/nejkit/ai-agent-bot/models"
 	"github.com/nejkit/ai-agent-bot/storage"
 	"sync"
+	"time"
 )
 
 type telegramClient interface {
@@ -24,6 +25,9 @@ type ticketProvider interface {
 	SaveTicket(data *models.ExternalChatTicketData) error
 	DeleteTicket(ticketId string) error
 	PushTicketIdToProcess(ticketId string) error
+	GetMinimumScoreFromPool(chatId int64) (int, error)
+	GetTicketFromPool(chatId int64) (string, error)
+	StoreTicketIntoPool(chatId int64, ticketId string, requestMessageId int) error
 }
 
 type openAICli interface {
@@ -36,10 +40,45 @@ type ChatManager struct {
 	messagesStorage messagesProvider
 	ticketStorage   ticketProvider
 	mtx             *sync.RWMutex
+	chatId          int64
 }
 
-func NewChatManager(aiCli openAICli, messagesStorage messagesProvider, ticketStorage ticketProvider, tgCli telegramClient) *ChatManager {
-	return &ChatManager{aiCli: aiCli, messagesStorage: messagesStorage, ticketStorage: ticketStorage, tgCli: tgCli, mtx: &sync.RWMutex{}}
+func NewChatManager(aiCli openAICli, messagesStorage messagesProvider, ticketStorage ticketProvider, tgCli telegramClient, chatId int64) *ChatManager {
+	return &ChatManager{aiCli: aiCli, messagesStorage: messagesStorage, ticketStorage: ticketStorage, tgCli: tgCli, mtx: &sync.RWMutex{}, chatId: chatId}
+}
+
+func (c *ChatManager) StartConsumeTickets(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			ticketId, err := c.ticketStorage.GetTicketFromPool(c.chatId)
+
+			if err != nil {
+				time.Sleep(time.Millisecond * 30)
+				continue
+			}
+
+			ticketInfo, err := c.ticketStorage.GetTicketById(ticketId)
+
+			if err != nil {
+				time.Sleep(time.Millisecond * 30)
+				continue
+			}
+
+			switch ticketInfo.Action {
+			case models.TicketActionValidation:
+				c.ProcessValidationAction(ticketId)
+			case models.TicketActionCollectContext:
+				c.ProcessCollectContextAction(ticketId)
+			case models.TicketActionSendAiRequest:
+				c.ProcessActionSendToAi(ticketId)
+			case models.TicketActionSendTgResponse:
+				c.ProcessActionSendToTg(ticketId)
+			}
+		}
+	}
 }
 
 func (c *ChatManager) ProcessValidationAction(ticketId string) error {
@@ -93,7 +132,7 @@ func (c *ChatManager) ProcessValidationAction(ticketId string) error {
 		return err
 	}
 
-	return c.ticketStorage.PushTicketIdToProcess(ticketId)
+	return c.ticketStorage.StoreTicketIntoPool(c.chatId, ticketId, ticketInfo.RequestMessageId)
 }
 
 func (c *ChatManager) ProcessCollectContextAction(ticketId string) error {
@@ -142,7 +181,7 @@ func (c *ChatManager) ProcessCollectContextAction(ticketId string) error {
 		return err
 	}
 
-	return c.ticketStorage.PushTicketIdToProcess(ticketId)
+	return c.ticketStorage.StoreTicketIntoPool(c.chatId, ticketId, ticketInfo.RequestMessageId)
 }
 
 func (c *ChatManager) ProcessActionSendToAi(ticketId string) error {
@@ -201,7 +240,7 @@ func (c *ChatManager) ProcessActionSendToAi(ticketId string) error {
 			return
 		}
 
-		if err = c.ticketStorage.PushTicketIdToProcess(ticketId); err != nil {
+		if err = c.ticketStorage.StoreTicketIntoPool(c.chatId, ticketId, ticketInfo.RequestMessageId); err != nil {
 			return
 		}
 	}()
@@ -239,13 +278,17 @@ func (c *ChatManager) ProcessActionSendToTg(ticketId string) error {
 		return err
 	}
 
-	newNonce := ticketInfo.ReplyMessageId + 1
+	nonce, err := c.ticketStorage.GetMinimumScoreFromPool(c.chatId)
 
-	if ticketInfo.ReplyMessageId-ticketInfo.RequestMessageId > 1 {
-		newNonce = ticketInfo.RequestMessageId + 1
+	if err != nil && !errors.Is(err, storage.ErrorNotFound) {
+		return err
 	}
 
-	err = c.messagesStorage.SetChatNonce(ticketInfo.ChatId, newNonce)
+	if errors.Is(err, storage.ErrorNotFound) {
+		nonce = ticketInfo.ReplyMessageId + 1
+	}
+
+	err = c.messagesStorage.SetChatNonce(ticketInfo.ChatId, nonce)
 
 	if err != nil {
 		return err

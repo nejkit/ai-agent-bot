@@ -28,6 +28,9 @@ type ticketProvider interface {
 	SaveTicket(data *models.ExternalChatTicketData) error
 	DeleteTicket(ticketId string) error
 	PushTicketIdToProcess(ticketId string) error
+	GetMinimumScoreFromPool(chatId int64) (int, error)
+	GetTicketFromPool(chatId int64) (string, error)
+	StoreTicketIntoPool(chatId int64, ticketId string, requestMessageId int) error
 }
 
 type openAICli interface {
@@ -71,12 +74,12 @@ func (t *TelegramHandler) StartHandleTgUpdates(ctx context.Context) {
 			chatId := upd.Message.Chat.ID
 
 			chatManager, exist := t.chatManagers[chatId]
-
 			if !exist {
-				chatManager = *manager.NewChatManager(t.aiCli, t.messagesProvider, t.ticketProvider, t.tgCLi)
+				chatManager = *manager.NewChatManager(t.aiCli, t.messagesProvider, t.ticketProvider, t.tgCLi, chatId)
 				t.chatManagers[chatId] = chatManager
 
 				_ = t.messagesProvider.SetChatNonce(chatId, upd.Message.MessageID)
+				go chatManager.StartConsumeTickets(ctx)
 			}
 
 			replyMsgId, err := t.tgCLi.SendReplyMessageForChatId(chatId, upd.Message.MessageID, "Your request queued...")
@@ -106,46 +109,8 @@ func (t *TelegramHandler) StartHandleTgUpdates(ctx context.Context) {
 				continue
 			}
 
-			if err := t.ticketProvider.PushTicketIdToProcess(ticketModel.Id); err != nil {
+			if err := t.ticketProvider.StoreTicketIntoPool(chatId, ticketModel.Id, ticketModel.RequestMessageId); err != nil {
 				continue
-			}
-		}
-	}
-}
-
-func (t *TelegramHandler) StartProcessTickets(ctx context.Context) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-			ticketId, err := t.ticketProvider.GetTicketIdForProcess()
-
-			if err != nil {
-				continue
-			}
-
-			ticketInfo, err := t.ticketProvider.GetTicketById(ticketId)
-
-			if err != nil {
-				continue
-			}
-
-			chatManager, exist := t.chatManagers[ticketInfo.ChatId]
-
-			if !exist {
-				continue
-			}
-
-			switch ticketInfo.Action {
-			case models.TicketActionValidation:
-				go logErrorIfFailed(chatManager.ProcessValidationAction(ticketId))
-			case models.TicketActionCollectContext:
-				go logErrorIfFailed(chatManager.ProcessCollectContextAction(ticketId))
-			case models.TicketActionSendAiRequest:
-				go logErrorIfFailed(chatManager.ProcessActionSendToAi(ticketId))
-			case models.TicketActionSendTgResponse:
-				go logErrorIfFailed(chatManager.ProcessActionSendToTg(ticketId))
 			}
 		}
 	}

@@ -7,7 +7,8 @@ type AppConfig struct {
 }
 
 type TelegramConfig struct {
-	Token string
+	Token          string
+	AllowedChatIds []int64
 }
 
 type RedisConfig struct {

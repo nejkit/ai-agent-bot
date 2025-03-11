@@ -47,7 +47,7 @@ func main() {
 		return
 	}
 
-	handle := handler.NewTelegramHandler(updChan, make(map[int64]manager.ChatManager), openAiCli, ticketStorage, messageStorage, tgCli)
+	handle := handler.NewTelegramHandler(updChan, make(map[int64]manager.ChatManager), openAiCli, ticketStorage, messageStorage, tgCli, config.TelegramConfig)
 
 	fmt.Println("Start app")
 	handle.StartHandleTgUpdates(context.Background())

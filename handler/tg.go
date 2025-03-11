@@ -5,6 +5,7 @@ import (
 	"fmt"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
 	"github.com/google/uuid"
+	"github.com/nejkit/ai-agent-bot/config"
 	"github.com/nejkit/ai-agent-bot/manager"
 	"github.com/nejkit/ai-agent-bot/models"
 	"time"
@@ -45,10 +46,11 @@ type TelegramHandler struct {
 	ticketProvider   ticketProvider
 	messagesProvider messagesProvider
 	tgCLi            telegramClient
+	cfg              config.TelegramConfig
 }
 
-func NewTelegramHandler(updates tgbotapi.UpdatesChannel, chatManagers map[int64]manager.ChatManager, aiCli openAICli, ticketProvider ticketProvider, messagesProvider messagesProvider, tgCLi telegramClient) *TelegramHandler {
-	return &TelegramHandler{updates: updates, chatManagers: chatManagers, aiCli: aiCli, ticketProvider: ticketProvider, messagesProvider: messagesProvider, tgCLi: tgCLi}
+func NewTelegramHandler(updates tgbotapi.UpdatesChannel, chatManagers map[int64]manager.ChatManager, aiCli openAICli, ticketProvider ticketProvider, messagesProvider messagesProvider, tgCLi telegramClient, cfg config.TelegramConfig) *TelegramHandler {
+	return &TelegramHandler{updates: updates, chatManagers: chatManagers, aiCli: aiCli, ticketProvider: ticketProvider, messagesProvider: messagesProvider, tgCLi: tgCLi, cfg: cfg}
 }
 
 func (t *TelegramHandler) StartHandleTgUpdates(ctx context.Context) {
@@ -66,12 +68,20 @@ func (t *TelegramHandler) StartHandleTgUpdates(ctx context.Context) {
 			if upd.Message == nil {
 				continue
 			}
+			chatId := upd.Message.Chat.ID
 
-			if upd.Message.From.ID != 1 {
-				continue
+			isAuthorized := false
+
+			for _, id := range t.cfg.AllowedChatIds {
+				if id == chatId {
+					isAuthorized = true
+					break
+				}
 			}
 
-			chatId := upd.Message.Chat.ID
+			if !isAuthorized {
+				continue
+			}
 
 			chatManager, exist := t.chatManagers[chatId]
 			if !exist {

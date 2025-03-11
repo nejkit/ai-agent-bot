@@ -117,7 +117,7 @@ func (c *ChatManager) ProcessValidationAction(ticketId string) error {
 			return err
 		}
 
-		if err = c.ticketStorage.PushTicketIdToProcess(ticketId); err != nil {
+		if err = c.ticketStorage.StoreTicketIntoPool(c.chatId, ticketId, ticketInfo.RequestMessageId); err != nil {
 			return err
 		}
 

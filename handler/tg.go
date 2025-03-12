@@ -2,13 +2,16 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
+	"time"
+
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/google/uuid"
 	"github.com/nejkit/ai-agent-bot/config"
 	"github.com/nejkit/ai-agent-bot/manager"
 	"github.com/nejkit/ai-agent-bot/models"
-	"time"
+	"github.com/sirupsen/logrus"
 )
 
 type telegramClient interface {
@@ -69,6 +72,11 @@ func (t *TelegramHandler) StartHandleTgUpdates(ctx context.Context) {
 				continue
 			}
 			chatId := upd.Message.Chat.ID
+
+			if upd.Message.Chat.IsSuperGroup() {
+				jsonData, _ := json.Marshal(upd.Message)
+				logrus.Infof("Supergroup topic: %v", string(jsonData))
+			}
 
 			isAuthorized := false
 

@@ -23,12 +23,9 @@ type messagesProvider interface {
 }
 
 type ticketProvider interface {
-	GetTicketIdForProcess() (string, error)
 	GetTicketById(ticketId string) (*models.ExternalChatTicketData, error)
 	SaveTicket(data *models.ExternalChatTicketData) error
 	DeleteTicket(ticketId string) error
-	PushTicketIdToProcess(ticketId string) error
-	GetMinimumScoreFromPool(chatId int64) (int, error)
 	GetTicketFromPool(chatId int64) (string, error)
 	StoreTicketIntoPool(chatId int64, ticketId string, requestMessageId int) error
 }

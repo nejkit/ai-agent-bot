@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+
 	"github.com/nejkit/ai-agent-bot/config"
 	"github.com/nejkit/ai-agent-bot/manager"
 	"github.com/nejkit/ai-agent-bot/models"

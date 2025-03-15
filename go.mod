@@ -10,6 +10,12 @@ require (
 )
 
 require (
+	github.com/sirupsen/logrus v1.9.3 // indirect
+	golang.org/x/sys v0.28.0 // indirect
+)
+
+require (
+	github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.1
 	github.com/onsi/ginkgo v1.16.5 // indirect
 	github.com/onsi/gomega v1.36.2 // indirect
 	github.com/tidwall/gjson v1.14.4 // indirect

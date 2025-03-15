@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
+
 	"github.com/go-redis/redis"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/nejkit/ai-agent-bot/config"
@@ -12,7 +14,6 @@ import (
 	"github.com/nejkit/ai-agent-bot/storage"
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
-	"log"
 )
 
 func main() {
@@ -40,12 +41,7 @@ func main() {
 
 	openAiCli := provider.NewOpenAIClient(aiCli)
 
-	updChan, err := botApi.GetUpdatesChan(tgbotapi.NewUpdate(0))
-
-	if err != nil {
-		log.Panic(err)
-		return
-	}
+	updChan := botApi.GetUpdatesChan(tgbotapi.NewUpdate(0))
 
 	handle := handler.NewTelegramHandler(updChan, make(map[int64]manager.ChatManager), openAiCli, ticketStorage, messageStorage, tgCli, config.TelegramConfig)
 

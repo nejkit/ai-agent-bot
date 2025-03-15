@@ -3,10 +3,11 @@ package manager
 import (
 	"context"
 	"errors"
-	"github.com/nejkit/ai-agent-bot/models"
-	"github.com/nejkit/ai-agent-bot/storage"
 	"sync"
 	"time"
+
+	"github.com/nejkit/ai-agent-bot/models"
+	"github.com/nejkit/ai-agent-bot/storage"
 )
 
 type telegramClient interface {
@@ -148,9 +149,15 @@ func (c *ChatManager) ProcessCollectContextAction(ticketId string) error {
 		CreatedBy: models.MessageTypeUser,
 	})
 
+	ticketInfo.ChatContext = chatCtx
+
+	if len(chatCtx) > 10 {
+		ticketInfo.ChatContext = chatCtx[len(chatCtx)-10:]
+	}
+
 	ticketInfo.Action = models.TicketActionSendAiRequest
 	ticketInfo.Status = models.TicketStatusNew
-	ticketInfo.ChatContext = chatCtx
+
 	ticketInfo.UpdateTicketExpiration()
 
 	return c.ticketStorage.SaveTicket(ticketInfo)

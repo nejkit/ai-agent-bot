@@ -18,8 +18,6 @@ type telegramClient interface {
 }
 
 type messagesProvider interface {
-	SetChatNonce(chatId int64, nonce int) error
-	GetChatNonce(chatId int64) (int, error)
 	GetMessagesForChatId(chatId int64) ([]models.MessageData, error)
 	SaveMessagesForChatId(chatId int64, messages []models.MessageData) error
 }

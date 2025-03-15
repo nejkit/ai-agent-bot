@@ -3,17 +3,17 @@ package handler
 import (
 	"context"
 	"fmt"
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
-	"github.com/google/uuid"
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/nejkit/ai-agent-bot/config"
 	"github.com/nejkit/ai-agent-bot/manager"
 	"github.com/nejkit/ai-agent-bot/models"
-	"time"
+	"slices"
 )
 
 type telegramClient interface {
 	SendReplyMessageForChatId(chatId int64, messageToReply int, text string) (int, error)
 	EditReplyMessageForChatId(chatId int64, messageId int, text string) error
+	DownloadFileById(fileId string) ([]byte, error)
 }
 
 type messagesProvider interface {
@@ -63,66 +63,39 @@ func (t *TelegramHandler) StartHandleTgUpdates(ctx context.Context) {
 				return
 			}
 
-			fmt.Printf("Update: %v \n", upd)
+			chatInfo := upd.FromChat()
 
-			if upd.Message == nil {
-				continue
-			}
-			chatId := upd.Message.Chat.ID
-
-			isAuthorized := false
-
-			for _, id := range t.cfg.AllowedChatIds {
-				if id == chatId {
-					isAuthorized = true
-					break
-				}
-			}
-
-			if !isAuthorized {
+			if !slices.Contains(t.cfg.AllowedChatIds, chatInfo.ID) {
 				continue
 			}
 
-			chatManager, exist := t.chatManagers[chatId]
-			if !exist {
-				chatManager = *manager.NewChatManager(t.aiCli, t.messagesProvider, t.ticketProvider, t.tgCLi, chatId)
-				t.chatManagers[chatId] = chatManager
+			go t.checkChatManagerHandler(ctx, chatInfo.ID)
 
-				_ = t.messagesProvider.SetChatNonce(chatId, upd.Message.MessageID)
-				go chatManager.StartConsumeTickets(ctx)
-			}
-
-			replyMsgId, err := t.tgCLi.SendReplyMessageForChatId(chatId, upd.Message.MessageID, "Your request queued...")
+			replyId, err := t.tgCLi.SendReplyMessageForChatId(chatInfo.ID, upd.Message.MessageID, "Your request queued...")
 
 			if err != nil {
 				continue
 			}
 
-			ticketModel := &models.ExternalChatTicketData{
-				Id:               uuid.NewString(),
-				ChatId:           chatId,
-				ReplyMessageId:   replyMsgId,
-				Status:           models.TicketStatusNew,
-				Action:           models.TicketActionValidation,
-				Type:             models.TicketTypeMessaging,
-				ChatContext:      make([]models.MessageData, 0),
-				RequestMessage:   upd.Message.Text,
-				RequestMessageId: upd.Message.MessageID,
-				ResponseMessage:  "",
-				ErrorMessage:     "",
-				RetryCount:       0,
-				Updated:          time.Now().UnixMilli(),
-				Expired:          time.Now().Add(time.Hour).UnixMilli(),
-			}
+			ticketModel := models.BuildTicketWithText(chatInfo.ID, replyId, upd.Message)
 
 			if err := t.ticketProvider.SaveTicket(ticketModel); err != nil {
 				continue
 			}
 
-			if err := t.ticketProvider.StoreTicketIntoPool(chatId, ticketModel.Id, ticketModel.RequestMessageId); err != nil {
+			if err := t.ticketProvider.StoreTicketIntoPool(chatInfo.ID, ticketModel.Id, ticketModel.Request.MessageId); err != nil {
 				continue
 			}
 		}
+	}
+}
+
+func (t *TelegramHandler) checkChatManagerHandler(ctx context.Context, chatId int64) {
+	chatManager, exist := t.chatManagers[chatId]
+	if !exist {
+		chatManager = *manager.NewChatManager(t.aiCli, t.messagesProvider, t.ticketProvider, t.tgCLi, chatId)
+		t.chatManagers[chatId] = chatManager
+		go chatManager.StartConsumeTickets(ctx)
 	}
 }
 

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"github.com/go-redis/redis"
 	"github.com/nejkit/ai-agent-bot/models"
-	"strconv"
 )
 
 type MessageProvider struct {
@@ -14,30 +13,6 @@ type MessageProvider struct {
 
 func NewMessageProvider(cli *redis.Client) *MessageProvider {
 	return &MessageProvider{cli: cli}
-}
-
-func (m *MessageProvider) SetChatNonce(chatId int64, nonce int) error {
-	return m.cli.Set(getMessagesNonceKey(chatId), nonce, 0).Err()
-}
-
-func (m *MessageProvider) GetChatNonce(chatId int64) (int, error) {
-	data, err := m.cli.Get(getMessagesNonceKey(chatId)).Result()
-
-	if errors.Is(err, redis.Nil) {
-		return 0, ErrorNotFound
-	}
-
-	if err != nil {
-		return 0, err
-	}
-
-	nonce, err := strconv.ParseInt(data, 10, 32)
-
-	if err != nil {
-		return 0, err
-	}
-
-	return int(nonce), nil
 }
 
 func (m *MessageProvider) GetMessagesForChatId(chatId int64) ([]models.MessageData, error) {

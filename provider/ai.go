@@ -1,10 +1,12 @@
 package provider
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"github.com/nejkit/ai-agent-bot/models"
 	"github.com/openai/openai-go"
+	"io"
 )
 
 type OpenAIClient struct {
@@ -37,6 +39,31 @@ func (o *OpenAIClient) SendMessagesToAI(ctx context.Context, messages []models.M
 		return "", err
 	}
 
+	if _, err = o.cli.Chat.Completions.Delete(ctx, comp.ID); err != nil {
+		fmt.Printf("error ai: %s", err.Error())
+		return "", err
+	}
+
 	return comp.Choices[0].Message.Content, nil
 	//return "test", nil
+}
+
+func (o *OpenAIClient) DownloadFile(ctx context.Context, content []byte) (string, error) {
+	reader := bytes.NewReader(content)
+
+	fileObject, err := o.cli.Files.New(ctx, openai.FileNewParams{
+		File:    openai.F[io.Reader](reader),
+		Purpose: openai.F(openai.FilePurposeAssistants),
+	})
+
+	if err != nil {
+		fmt.Printf("error ai: %s", err.Error())
+		return "", err
+	}
+
+	return fileObject.ID, nil
+}
+
+func (o *OpenAIClient) SendMessageWithFileToAI(ctx context.Context) {
+
 }

@@ -11,11 +11,10 @@ import (
 
 type telegramClient interface {
 	EditReplyMessageForChatId(chatId int64, messageId int, text string) error
+	DownloadFileById(fileId string) ([]byte, error)
 }
 
 type messagesProvider interface {
-	SetChatNonce(chatId int64, nonce int) error
-	GetChatNonce(chatId int64) (int, error)
 	GetMessagesForChatId(chatId int64) ([]models.MessageData, error)
 	SaveMessagesForChatId(chatId int64, messages []models.MessageData) error
 }
@@ -24,8 +23,6 @@ type ticketProvider interface {
 	GetTicketById(ticketId string) (*models.ExternalChatTicketData, error)
 	SaveTicket(data *models.ExternalChatTicketData) error
 	DeleteTicket(ticketId string) error
-	PushTicketIdToProcess(ticketId string) error
-	GetMinimumScoreFromPool(chatId int64) (int, error)
 	GetTicketFromPool(chatId int64) (string, error)
 	StoreTicketIntoPool(chatId int64, ticketId string, requestMessageId int) error
 }
@@ -77,6 +74,8 @@ func (c *ChatManager) StartConsumeTickets(ctx context.Context) {
 			case models.TicketActionSendTgResponse:
 				c.ProcessActionSendToTg(ticketId)
 			}
+
+			time.Sleep(time.Millisecond * 100)
 		}
 	}
 }
@@ -105,34 +104,11 @@ func (c *ChatManager) ProcessValidationAction(ticketId string) error {
 		return err
 	}
 
-	chatNonce, err := c.messagesStorage.GetChatNonce(ticketInfo.ChatId)
-	if err != nil {
-		return err
-	}
-
-	if chatNonce < ticketInfo.RequestMessageId {
-		ticketInfo.Status = models.TicketStatusNew
-
-		if err = c.ticketStorage.SaveTicket(ticketInfo); err != nil {
-			return err
-		}
-
-		if err = c.ticketStorage.StoreTicketIntoPool(c.chatId, ticketId, ticketInfo.RequestMessageId); err != nil {
-			return err
-		}
-
-		return errors.New("chat nonce is too small")
-	}
-
 	ticketInfo.Action = models.TicketActionCollectContext
 	ticketInfo.Status = models.TicketStatusNew
 	ticketInfo.UpdateTicketExpiration()
 
-	if err = c.ticketStorage.SaveTicket(ticketInfo); err != nil {
-		return err
-	}
-
-	return c.ticketStorage.StoreTicketIntoPool(c.chatId, ticketId, ticketInfo.RequestMessageId)
+	return c.ticketStorage.SaveTicket(ticketInfo)
 }
 
 func (c *ChatManager) ProcessCollectContextAction(ticketId string) error {
@@ -168,7 +144,7 @@ func (c *ChatManager) ProcessCollectContextAction(ticketId string) error {
 	}
 
 	chatCtx = append(chatCtx, models.MessageData{
-		Text:      ticketInfo.RequestMessage,
+		Text:      ticketInfo.Request.Text,
 		CreatedBy: models.MessageTypeUser,
 	})
 
@@ -177,11 +153,7 @@ func (c *ChatManager) ProcessCollectContextAction(ticketId string) error {
 	ticketInfo.ChatContext = chatCtx
 	ticketInfo.UpdateTicketExpiration()
 
-	if err = c.ticketStorage.SaveTicket(ticketInfo); err != nil {
-		return err
-	}
-
-	return c.ticketStorage.StoreTicketIntoPool(c.chatId, ticketId, ticketInfo.RequestMessageId)
+	return c.ticketStorage.SaveTicket(ticketInfo)
 }
 
 func (c *ChatManager) ProcessActionSendToAi(ticketId string) error {
@@ -207,18 +179,22 @@ func (c *ChatManager) ProcessActionSendToAi(ticketId string) error {
 	}
 
 	go func() {
+		if ticketInfo.Request.FileId != "" {
+
+		}
+
 		response, err := c.aiCli.SendMessagesToAI(context.TODO(), ticketInfo.ChatContext)
 
 		if err != nil {
 
 			if ticketInfo.RetryCount >= 3 {
 				ticketInfo.Status = models.TicketStatusError
-				ticketInfo.ErrorMessage = err.Error()
+				ticketInfo.Error = err
 				return
 			}
 
 			ticketInfo.Status = models.TicketStatusNew
-			ticketInfo.ErrorMessage = err.Error()
+			ticketInfo.Error = err
 			ticketInfo.RetryCount++
 			ticketInfo.UpdateTicketExpiration()
 
@@ -230,7 +206,7 @@ func (c *ChatManager) ProcessActionSendToAi(ticketId string) error {
 		ticketInfo.Status = models.TicketStatusNew
 		ticketInfo.UpdateTicketExpiration()
 		ticketInfo.Action = models.TicketActionSendTgResponse
-		ticketInfo.ResponseMessage = response
+		ticketInfo.Response.Text = response
 		ticketInfo.ChatContext = append(ticketInfo.ChatContext, models.MessageData{
 			Text:      response,
 			CreatedBy: models.MessageTypeAssistant,
@@ -239,13 +215,18 @@ func (c *ChatManager) ProcessActionSendToAi(ticketId string) error {
 		if err = c.ticketStorage.SaveTicket(ticketInfo); err != nil {
 			return
 		}
-
-		if err = c.ticketStorage.StoreTicketIntoPool(c.chatId, ticketId, ticketInfo.RequestMessageId); err != nil {
-			return
-		}
 	}()
 
 	return nil
+}
+
+func (c *ChatManager) sendAiRequestWithFile(ticketInfo *models.ExternalChatTicketData) {
+	_, err := c.tgCli.DownloadFileById(ticketInfo.Request.FileId)
+
+	if err != nil {
+
+	}
+
 }
 
 func (c *ChatManager) ProcessActionSendToTg(ticketId string) error {
@@ -278,23 +259,7 @@ func (c *ChatManager) ProcessActionSendToTg(ticketId string) error {
 		return err
 	}
 
-	nonce, err := c.ticketStorage.GetMinimumScoreFromPool(c.chatId)
-
-	if err != nil && !errors.Is(err, storage.ErrorNotFound) {
-		return err
-	}
-
-	if errors.Is(err, storage.ErrorNotFound) {
-		nonce = ticketInfo.ReplyMessageId + 1
-	}
-
-	err = c.messagesStorage.SetChatNonce(ticketInfo.ChatId, nonce)
-
-	if err != nil {
-		return err
-	}
-
-	err = c.tgCli.EditReplyMessageForChatId(ticketInfo.ChatId, ticketInfo.ReplyMessageId, ticketInfo.ResponseMessage)
+	err = c.tgCli.EditReplyMessageForChatId(ticketInfo.ChatId, ticketInfo.Response.MessageId, ticketInfo.Response.Text)
 
 	return c.ticketStorage.DeleteTicket(ticketId)
 }

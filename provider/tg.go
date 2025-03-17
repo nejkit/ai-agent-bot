@@ -54,9 +54,7 @@ func (t *TelegramClient) DownloadFileById(fileId string) ([]byte, error) {
 
 	fileBytes := []byte{}
 
-	_, err = response.Body.Read(fileBytes)
-
-	if err != nil {
+	if _, err = response.Body.Read(fileBytes); err != nil {
 		return nil, err
 	}
 

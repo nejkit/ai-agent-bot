@@ -1,9 +1,10 @@
 package models
 
 import (
+	"time"
+
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/google/uuid"
-	"time"
 )
 
 type MessageData struct {
@@ -63,6 +64,8 @@ type ExternalChatTicketData struct {
 	Request  RequestData
 	Response ResponseData
 
+	AssistantData *AssistantData
+
 	Error error
 
 	RetryCount int   // retry count if status failed inc
@@ -81,6 +84,12 @@ type ResponseData struct {
 	Text        string
 	FileContent []byte
 	MessageId   int
+}
+
+type AssistantData struct {
+	ThreadId string
+	RunId    string
+	FileId   string
 }
 
 func (t *ExternalChatTicketData) UpdateTicketExpiration() {
@@ -102,7 +111,9 @@ const (
 const (
 	TicketActionValidation TicketAction = iota
 	TicketActionCollectContext
+	TicketActionTransferFile
 	TicketActionSendAiRequest
+	TicketActionPullAiResponse
 	TicketActionSendTgResponse
 )
 

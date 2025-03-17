@@ -2,8 +2,9 @@ package provider
 
 import (
 	"fmt"
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"net/http"
+
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
 type TelegramClient struct {
@@ -51,7 +52,7 @@ func (t *TelegramClient) DownloadFileById(fileId string) ([]byte, error) {
 		return nil, err
 	}
 
-	fileBytes := make([]byte, 0)
+	fileBytes := []byte{}
 
 	_, err = response.Body.Read(fileBytes)
 

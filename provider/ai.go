@@ -5,9 +5,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+
 	"github.com/nejkit/ai-agent-bot/models"
 	"github.com/openai/openai-go"
-	"io"
 )
 
 type OpenAIClient struct {
@@ -39,7 +40,7 @@ func (o *OpenAIClient) SendMessagesToAI(ctx context.Context, messages []models.M
 	return comp.Choices[0].Message.Content, nil
 }
 
-func (o *OpenAIClient) DownloadFile(ctx context.Context, content []byte) (string, error) {
+func (o *OpenAIClient) UploadFile(ctx context.Context, content []byte) (string, error) {
 	reader := bytes.NewReader(content)
 
 	fileObject, err := o.cli.Files.New(ctx, openai.FileNewParams{
@@ -55,7 +56,7 @@ func (o *OpenAIClient) DownloadFile(ctx context.Context, content []byte) (string
 	return fileObject.ID, nil
 }
 
-func (o *OpenAIClient) SendMessageWithFileToAI(ctx context.Context, messages []models.MessageData, fileId string) (string, error) {
+func (o *OpenAIClient) SendMessageWithFileToAI(ctx context.Context, messages []models.MessageData, fileId string) (string, string, error) {
 	mappedMessages := mapThreadMessages(messages, fileId)
 
 	response, err := o.cli.Beta.Threads.NewAndRun(
@@ -71,28 +72,58 @@ func (o *OpenAIClient) SendMessageWithFileToAI(ctx context.Context, messages []m
 
 	if err != nil {
 		fmt.Printf("error ai: %s", err.Error())
-		return "", err
+		return "", "", err
 	}
 
-	run, err := o.cli.Beta.Threads.Runs.PollStatus(ctx, response.ThreadID, response.ID, 1000)
+	return response.ThreadID, response.ID, nil
+
+}
+
+func (o *OpenAIClient) PollResponseFromAssistant(ctx context.Context, threadId string, runId string) (string, string, error) {
+	run, err := o.cli.Beta.Threads.Runs.PollStatus(ctx, threadId, runId, 2000)
 
 	if err != nil {
 		fmt.Printf("error ai: %s", err.Error())
-		return "", err
+		return "", "", err
 	}
 
 	if run.Status != "completed" {
-		return "", errors.New(run.LastError.Message)
+		return "", "", errors.New(run.LastError.Message)
 	}
 
-	queryResult, err := o.cli.Beta.Threads.Messages.List(ctx, response.ThreadID, openai.BetaThreadMessageListParams{RunID: openai.F(run.ID)})
+	queryResult, err := o.cli.Beta.Threads.Messages.List(ctx, threadId, openai.BetaThreadMessageListParams{RunID: openai.F(runId)})
 
 	if err != nil {
 		fmt.Printf("error ai: %s", err.Error())
-		return "", err
+		return "", "", err
 	}
 
-	return queryResult.Data[0].Content[0].Text.Value, nil
+	fileId := ""
+
+	if queryResult.Data[0].Attachments != nil {
+		fileId = queryResult.Data[0].Attachments[0].FileID
+	}
+
+	return queryResult.Data[0].Content[0].Text.Value, fileId, nil
+}
+
+func (o *OpenAIClient) DownloadFile(ctx context.Context, fileId string) ([]byte, error) {
+	fileObject, err := o.cli.Files.Content(ctx, fileId)
+
+	if err != nil {
+		fmt.Printf("error ai: %s", err.Error())
+		return nil, err
+	}
+
+	content := []byte{}
+
+	_, err = fileObject.Body.Read(content)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return content, nil
 }
 
 func mapThreadMessages(messages []models.MessageData, fileId string) []openai.BetaThreadNewAndRunParamsThreadMessage {

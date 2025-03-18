@@ -7,15 +7,13 @@ require (
 	github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.1
 	github.com/google/uuid v1.6.0
 	github.com/openai/openai-go v0.1.0-alpha.60
+	github.com/sirupsen/logrus v1.9.3
 )
 
-require (
-	github.com/sirupsen/logrus v1.9.3 // indirect
-	golang.org/x/sys v0.28.0 // indirect
-)
+require golang.org/x/sys v0.28.0 // indirect
 
 require (
-	github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.1
+	github.com/caarlos0/env/v11 v11.3.1 // indirect
 	github.com/onsi/ginkgo v1.16.5 // indirect
 	github.com/onsi/gomega v1.36.2 // indirect
 	github.com/tidwall/gjson v1.14.4 // indirect

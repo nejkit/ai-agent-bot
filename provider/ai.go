@@ -5,10 +5,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
-
 	"github.com/nejkit/ai-agent-bot/models"
 	"github.com/openai/openai-go"
+	"github.com/openai/openai-go/option"
 )
 
 type OpenAIClient struct {
@@ -28,12 +27,11 @@ func (o *OpenAIClient) SendMessagesToAI(ctx context.Context, messages []models.M
 	})
 
 	if err != nil {
-		fmt.Printf("error ai: %s", err.Error())
-		return "", err
-	}
+		var apiErr *openai.Error
+		if errors.As(err, &apiErr) {
+			return "", errors.New(apiErr.Message)
+		}
 
-	if _, err = o.cli.Chat.Completions.Delete(ctx, comp.ID); err != nil {
-		fmt.Printf("error ai: %s", err.Error())
 		return "", err
 	}
 
@@ -41,10 +39,8 @@ func (o *OpenAIClient) SendMessagesToAI(ctx context.Context, messages []models.M
 }
 
 func (o *OpenAIClient) UploadFile(ctx context.Context, content []byte) (string, error) {
-	reader := bytes.NewReader(content)
-
 	fileObject, err := o.cli.Files.New(ctx, openai.FileNewParams{
-		File:    openai.F[io.Reader](reader),
+		File:    openai.FileParam(bytes.NewReader(content), "document.pdf", "application/pdf"),
 		Purpose: openai.F(openai.FilePurposeAssistants),
 	})
 
@@ -56,13 +52,13 @@ func (o *OpenAIClient) UploadFile(ctx context.Context, content []byte) (string, 
 	return fileObject.ID, nil
 }
 
-func (o *OpenAIClient) SendMessageWithFileToAI(ctx context.Context, messages []models.MessageData, fileId string) (string, string, error) {
+func (o *OpenAIClient) SendMessageWithFileToAI(ctx context.Context, messages []models.MessageData, assistantId string, fileId string) (string, string, error) {
 	mappedMessages := mapThreadMessages(messages, fileId)
 
 	response, err := o.cli.Beta.Threads.NewAndRun(
 		ctx,
 		openai.BetaThreadNewAndRunParams{
-			AssistantID: openai.F(""),
+			AssistantID: openai.F(assistantId),
 			Model:       openai.F(openai.ChatModelGPT4oMini),
 			Thread: openai.F(openai.BetaThreadNewAndRunParamsThread{
 				Messages: openai.F(mappedMessages),
@@ -100,7 +96,7 @@ func (o *OpenAIClient) PollResponseFromAssistant(ctx context.Context, threadId s
 
 	fileId := ""
 
-	if queryResult.Data[0].Attachments != nil {
+	if queryResult.Data[0].Attachments != nil && len(queryResult.Data[0].Attachments) > 0 {
 		fileId = queryResult.Data[0].Attachments[0].FileID
 	}
 
@@ -108,7 +104,7 @@ func (o *OpenAIClient) PollResponseFromAssistant(ctx context.Context, threadId s
 }
 
 func (o *OpenAIClient) DownloadFile(ctx context.Context, fileId string) ([]byte, error) {
-	fileObject, err := o.cli.Files.Content(ctx, fileId)
+	fileObject, err := o.cli.Files.Content(ctx, fileId, option.WithHeader("Content-Type", "application/octet-stream"))
 
 	if err != nil {
 		fmt.Printf("error ai: %s", err.Error())
@@ -127,15 +123,12 @@ func (o *OpenAIClient) DownloadFile(ctx context.Context, fileId string) ([]byte,
 }
 
 func mapThreadMessages(messages []models.MessageData, fileId string) []openai.BetaThreadNewAndRunParamsThreadMessage {
-	ctxMessages := messages[:len(messages)-1]
-	newMessage := messages[len(messages)-1]
-
 	var result []openai.BetaThreadNewAndRunParamsThreadMessage
 
-	for index := range ctxMessages {
+	for index := range messages {
 		role := openai.BetaThreadNewAndRunParamsThreadMessagesRoleUser
 
-		if ctxMessages[index].CreatedBy == models.MessageTypeAssistant {
+		if messages[index].CreatedBy == models.MessageTypeAssistant {
 			role = openai.BetaThreadNewAndRunParamsThreadMessagesRoleAssistant
 		}
 
@@ -145,32 +138,21 @@ func mapThreadMessages(messages []models.MessageData, fileId string) []openai.Be
 				[]openai.MessageContentPartParamUnion{
 					openai.MessageContentPartParam{
 						Type: openai.F(openai.MessageContentPartParamTypeText),
-						Text: openai.F(ctxMessages[index].Text),
+						Text: openai.F(messages[index].Text),
 					},
 				},
 			),
 		})
 	}
 
-	result = append(
-		result,
-		openai.BetaThreadNewAndRunParamsThreadMessage{
-			Role: openai.F(openai.BetaThreadNewAndRunParamsThreadMessagesRoleUser),
-			Content: openai.F(
-				[]openai.MessageContentPartParamUnion{
-					openai.MessageContentPartParam{
-						Type: openai.F(openai.MessageContentPartParamTypeText),
-						Text: openai.F(newMessage.Text),
-					},
-				},
-			),
-			Attachments: openai.F([]openai.BetaThreadNewAndRunParamsThreadMessagesAttachment{
-				{
-					FileID: openai.F(fileId),
-				},
+	result[len(messages)-1].Attachments = openai.F([]openai.BetaThreadNewAndRunParamsThreadMessagesAttachment{
+		{
+			FileID: openai.F(fileId),
+			Tools: openai.F([]openai.BetaThreadNewAndRunParamsThreadMessagesAttachmentsToolUnion{
+				openai.BetaThreadNewAndRunParamsThreadMessagesAttachmentsTool{Type: openai.F(openai.BetaThreadNewAndRunParamsThreadMessagesAttachmentsToolsTypeFileSearch)},
 			}),
 		},
-	)
+	})
 
 	return result
 }

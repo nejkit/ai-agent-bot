@@ -6,3 +6,13 @@ services:
 
     ports:
       - "6379:6379"
+
+  agent:
+    image: ai-agent-bot:latest
+
+    environment:
+      TELEGRAM_TOKEN: ${TELEGRAM_TOKEN}
+      TELEGRAM_ALLOWED_USERS: ${ALLOWED_USERS}
+      REDIS_ADDR: redis
+      REDIS_PORT: 6379
+      AI_TOKEN: ${AI_TOKEN}

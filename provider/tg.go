@@ -1,7 +1,10 @@
 package provider
 
 import (
+	"errors"
 	"fmt"
+	"github.com/sirupsen/logrus"
+	"io"
 	"net/http"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -46,17 +49,77 @@ func (t *TelegramClient) DownloadFileById(fileId string) ([]byte, error) {
 		return nil, err
 	}
 
-	response, err := http.Get(fmt.Sprintf("https://api.telegram.org/file/bot%s/%s", t.api.Token, fileInfo.FilePath))
+	logrus.Infof("Link to file: %s", fmt.Sprintf("https://api.telegram.org/file/bot%s/%s", t.api.Token, fileInfo.FilePath))
+
+	httpResponse, err := http.Get(fmt.Sprintf("https://api.telegram.org/file/bot%s/%s", t.api.Token, fileInfo.FilePath))
 
 	if err != nil {
 		return nil, err
 	}
 
-	fileBytes := []byte{}
+	body, err := io.ReadAll(httpResponse.Body)
 
-	if _, err = response.Body.Read(fileBytes); err != nil {
+	if err != nil {
 		return nil, err
 	}
 
-	return fileBytes, nil
+	return body, nil
+}
+
+func (t *TelegramClient) GetChatInfoByID(cfg tgbotapi.ChatConfig) (*tgbotapi.Chat, error) {
+	chat, err := t.api.GetChat(tgbotapi.ChatInfoConfig{ChatConfig: cfg})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &chat, nil
+}
+
+func (t *TelegramClient) GetChatInfoByUserName(superGroupName string) (*tgbotapi.Chat, error) {
+	chatCfg := tgbotapi.ChatConfig{SuperGroupUsername: superGroupName}
+
+	chat, err := t.api.GetChat(tgbotapi.ChatInfoConfig{ChatConfig: chatCfg})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &chat, nil
+}
+
+func (t *TelegramClient) GetChatOwnerId(chatID int64) (int64, error) {
+	chatCfg := tgbotapi.ChatConfig{ChatID: chatID}
+
+	chatMembers, err := t.api.GetChatAdministrators(tgbotapi.ChatAdministratorsConfig{ChatConfig: chatCfg})
+
+	if err != nil {
+		return 0, err
+	}
+
+	for index := range chatMembers {
+		if chatMembers[index].IsCreator() {
+			return chatMembers[index].User.ID, nil
+		}
+	}
+
+	return 0, errors.New("not found chat creator")
+}
+
+func (t *TelegramClient) GetChatOwnerInfo(chatID int64) (*tgbotapi.User, error) {
+	chatCfg := tgbotapi.ChatConfig{ChatID: chatID}
+
+	chatMembers, err := t.api.GetChatAdministrators(tgbotapi.ChatAdministratorsConfig{ChatConfig: chatCfg})
+
+	if err != nil {
+		return nil, err
+	}
+
+	for index := range chatMembers {
+		if chatMembers[index].IsCreator() {
+			return chatMembers[index].User, nil
+		}
+	}
+
+	return nil, errors.New("not found chat creator")
 }

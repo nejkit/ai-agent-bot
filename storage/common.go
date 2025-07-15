@@ -28,3 +28,7 @@ func getChatsKey() string {
 func getSuperGroupConfigsKey(chatID int64) string {
 	return fmt.Sprintf("supergroup:config:%d", chatID)
 }
+
+func getReportMetadataKey(hash string) string {
+	return fmt.Sprintf("report:metadata:%s", hash)
+}

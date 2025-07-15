@@ -7,8 +7,8 @@ type AppConfig struct {
 }
 
 type TelegramConfig struct {
-	Token        string  `env:"TOKEN"`
-	AllowedUsers []int64 `env:"ALLOWED_USERS" envSeparator:","`
+	Token    string `env:"TOKEN"`
+	RootUser string `env:"ROOT_USER"`
 }
 
 type RedisConfig struct {

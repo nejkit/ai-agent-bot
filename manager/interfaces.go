@@ -4,16 +4,18 @@ import (
 	"context"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/nejkit/ai-agent-bot/models"
+	"github.com/nejkit/ai-agent-bot/storage"
 )
 
 type telegramClient interface {
 	EditReplyMessageForChatId(chatId int64, messageId int, text string) error
 	DownloadFileById(fileId string) ([]byte, error)
-	ReplyOnMessageWithAttachment(chatId int64, messageId int, attachment []byte) error
 	GetChatOwnerId(chatID int64) (int64, error)
 	GetChatInfoByID(config tgbotapi.ChatConfig) (*tgbotapi.Chat, error)
 	GetChatInfoByUserName(superGroupName string) (*tgbotapi.Chat, error)
 	GetChatOwnerInfo(chatID int64) (*tgbotapi.User, error)
+	SendMessageWithFile(chatId int64, message string, file []byte) error
+	SendMessage(chatId int64, message string) error
 }
 
 type messagesProvider interface {
@@ -24,6 +26,9 @@ type messagesProvider interface {
 	GetSettingsForSuperGroupChat(chatId int64) (*models.SuperGroupConfigModel, error)
 	SaveSettingsForSuperGroupChat(chatId int64, info *models.SuperGroupConfigModel) error
 	SaveChatToAllowed(chatId int64) error
+
+	SaveReportMeta(hash string, author string, formDate string) error
+	GetReportMetadata(hash string) (*storage.ReportMeta, error)
 }
 
 type ticketProvider interface {

@@ -160,10 +160,15 @@ func mapThreadMessages(messages []models.MessageData, fileId string) []openai.Be
 func mapMessages(messages []models.MessageData) []openai.ChatCompletionMessageParamUnion {
 	var mappedMessages []openai.ChatCompletionMessageParamUnion
 
-	for _, message := range messages {
+	for idx, message := range messages {
 		if message.CreatedBy == models.MessageTypeAssistant {
 			mappedMessages = append(mappedMessages, openai.AssistantMessage(message.Text))
 			continue
+		}
+
+		if idx == len(messages)-1 {
+			mappedMessages = append(mappedMessages, openai.UserMessage(message.Text+"\"\"\"\nDeliver the response here in plain text without any formatting.\n\"\"\""))
+			break
 		}
 
 		mappedMessages = append(mappedMessages, openai.UserMessage(message.Text))

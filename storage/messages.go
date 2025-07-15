@@ -12,6 +12,11 @@ type MessageProvider struct {
 	cli *redis.Client
 }
 
+type ReportMeta struct {
+	FormDate string
+	Author   string
+}
+
 func NewMessageProvider(cli *redis.Client) *MessageProvider {
 	return &MessageProvider{cli: cli}
 }
@@ -97,6 +102,41 @@ func (m *MessageProvider) GetSettingsForSuperGroupChat(chatId int64) (*models.Su
 	}
 
 	var result models.SuperGroupConfigModel
+	err = json.Unmarshal([]byte(data), &result)
+	if err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+func (m *MessageProvider) SaveReportMeta(hash string, author string, formDate string) error {
+	dto := ReportMeta{
+		FormDate: formDate,
+		Author:   author,
+	}
+
+	data, err := json.Marshal(dto)
+
+	if err != nil {
+		return err
+	}
+
+	return m.cli.Set(getReportMetadataKey(hash), data, 0).Err()
+}
+
+func (m *MessageProvider) GetReportMetadata(hash string) (*ReportMeta, error) {
+	data, err := m.cli.Get(getReportMetadataKey(hash)).Result()
+
+	if errors.Is(err, redis.Nil) {
+		return nil, ErrorNotFound
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	var result ReportMeta
 	err = json.Unmarshal([]byte(data), &result)
 	if err != nil {
 		return nil, err

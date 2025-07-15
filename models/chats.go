@@ -19,7 +19,7 @@ const (
 
 func BuildTicketWithText(chatId int64, chatCtxKey string, message *tgbotapi.Message) *ExternalChatTicketData {
 	fileId := ""
-	text := "Ознакомся с квитанцией, выдай характеристики текстом через абзац: отправитель, получатель, номера карт"
+	text := "Проаналізуй файл"
 
 	if message.Text != "" {
 		text = message.Text
@@ -41,12 +41,12 @@ func BuildTicketWithText(chatId int64, chatCtxKey string, message *tgbotapi.Mess
 		Action:         TicketActionValidation,
 		Type:           TicketTypeMessaging,
 		ChatContext:    make([]MessageData, 0),
-		Request: RequestData{
+		Request: &RequestData{
 			Text:      text,
 			FileId:    fileId,
 			MessageId: message.MessageID,
 		},
-		Response:   ResponseData{},
+		Response:   &ResponseData{},
 		RetryAt:    0,
 		RetryCount: 0,
 	}
@@ -63,8 +63,8 @@ type ExternalChatTicketData struct {
 
 	ChatContext []MessageData
 
-	Request  RequestData
-	Response ResponseData
+	Request  *RequestData
+	Response *ResponseData
 
 	AssistantData *AssistantData
 

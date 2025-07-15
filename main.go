@@ -41,6 +41,7 @@ func main() {
 
 	ticketStorage := storage.NewTicketProvider(redisClient)
 	messageStorage := storage.NewMessageProvider(redisClient)
+	actionStorage := storage.NewActionProvider(redisClient)
 
 	tgCli := provider.NewTelegramClient(botApi)
 
@@ -72,6 +73,6 @@ func main() {
 
 	updChan := botApi.GetUpdatesChan(tgbotapi.NewUpdate(0))
 
-	handle := handler.NewTelegramHandler(updChan, ticketStorage, messageStorage, tgCli, appCfg.TelegramConfig, chatContainer)
+	handle := handler.NewTelegramHandler(updChan, ticketStorage, messageStorage, tgCli, appCfg.TelegramConfig, chatContainer, actionStorage)
 	handle.StartHandleTgUpdates(rootCtx)
 }

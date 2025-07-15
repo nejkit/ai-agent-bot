@@ -40,6 +40,23 @@ func (t *TelegramClient) EditReplyMessageForChatId(chatId int64, messageId int, 
 	return err
 }
 
+func (t *TelegramClient) SendMessageWithFile(chatId int64, message string, file []byte) error {
+	msgConfig := tgbotapi.NewDocument(chatId, tgbotapi.FileBytes{
+		Name:  message,
+		Bytes: file,
+	})
+
+	_, err := t.api.Send(msgConfig)
+	return err
+}
+
+func (t *TelegramClient) SendMessage(chatId int64, message string) error {
+	msgConfig := tgbotapi.NewMessage(chatId, message)
+
+	_, err := t.api.Send(msgConfig)
+	return err
+}
+
 func (t *TelegramClient) DownloadFileById(fileId string) ([]byte, error) {
 	fileConfig := tgbotapi.FileConfig{FileID: fileId}
 

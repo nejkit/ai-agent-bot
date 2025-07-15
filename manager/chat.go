@@ -469,17 +469,6 @@ func (c *ChatManager) ProcessActionSendToTg(ticketId string) error {
 		return err
 	}
 
-	if ticketInfo.Response.FileContent != nil {
-		getLogger(ticketId).Infoln("Ticket contains response file, try upload it to chat")
-		err = c.tgCli.ReplyOnMessageWithAttachment(c.chatId, ticketInfo.Response.MessageId, ticketInfo.Response.FileContent)
-
-		if err != nil {
-
-			getLogger(ticketId).Infoln("Failed upload response file to chat")
-			return err
-		}
-	}
-
 	getLogger(ticketId).Infoln("Request success processed, try delete ticket data from storage")
 
 	return c.ticketStorage.DeleteTicket(ticketId)

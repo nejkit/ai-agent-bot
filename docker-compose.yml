@@ -7,12 +7,21 @@ services:
     ports:
       - "6379:6379"
 
+  pdf:
+    image: pdf-generator:latest
+    ports:
+      - "5050:1488"
+    environment:
+      REDIS: redis:6379
+
   agent:
     image: ai-agent-bot:latest
 
     environment:
-      TELEGRAM_TOKEN: ${TELEGRAM_TOKEN}
-      TELEGRAM_ALLOWED_USERS: ${ALLOWED_USERS}
+      TELEGRAM_TOKEN: ${BOT_TOKEN}
+      CRON_INTERVAL: "0 20 * * *"
+      TELEGRAM_ROOT_USER: ${TELEGRAM_ROOT_USER}
       REDIS_ADDR: redis
       REDIS_PORT: 6379
+      PDF_URL: http://pdf:1488
       AI_TOKEN: ${AI_TOKEN}

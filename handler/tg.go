@@ -2,15 +2,18 @@ package handler
 
 import (
 	"context"
+	"crypto"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/nejkit/ai-agent-bot/storage"
 	"github.com/sirupsen/logrus"
+	"slices"
 	"strconv"
 
 	"github.com/nejkit/ai-agent-bot/config"
 	"github.com/nejkit/ai-agent-bot/models"
-	"slices"
 )
 
 var (
@@ -24,6 +27,7 @@ type TelegramHandler struct {
 
 	ticketProvider   ticketProvider
 	messagesProvider messagesProvider
+	actionsProvider  actionsProvider
 	tgCLi            telegramClient
 
 	chatContainer chatContainer
@@ -31,7 +35,7 @@ type TelegramHandler struct {
 	cfg config.TelegramConfig
 }
 
-func NewTelegramHandler(updates tgbotapi.UpdatesChannel, ticketProvider ticketProvider, messagesProvider messagesProvider, tgCLi telegramClient, cfg config.TelegramConfig, containerManager chatContainer) *TelegramHandler {
+func NewTelegramHandler(updates tgbotapi.UpdatesChannel, ticketProvider ticketProvider, messagesProvider messagesProvider, tgCLi telegramClient, cfg config.TelegramConfig, containerManager chatContainer, actions actionsProvider) *TelegramHandler {
 	return &TelegramHandler{
 		updates:          updates,
 		ticketProvider:   ticketProvider,
@@ -39,6 +43,7 @@ func NewTelegramHandler(updates tgbotapi.UpdatesChannel, ticketProvider ticketPr
 		tgCLi:            tgCLi,
 		cfg:              cfg,
 		chatContainer:    containerManager,
+		actionsProvider:  actions,
 	}
 }
 
@@ -62,42 +67,43 @@ func (t *TelegramHandler) processUpdate(ctx context.Context, upd tgbotapi.Update
 		return
 	}
 
-	if upd.Message.IsCommand() {
-		if err := t.processCommandUpdate(upd); err != nil {
-			_, _ = t.tgCLi.SendReplyMessageForChatId(upd.FromChat().ID, upd.Message.MessageID, err.Error())
-		}
+	if !upd.FromChat().IsPrivate() {
+		go t.tgCLi.SendReplyMessageForChatId(upd.FromChat().ID, upd.Message.MessageID, "Используйте бота в личной переписке")
+		return
+	}
 
+	if upd.Message.IsCommand() {
+		t.ProcessCmdUpdate(upd)
+		return
+	}
+
+	action, err := t.actionsProvider.LoadAction(upd.FromChat().ID)
+
+	if err != nil {
+		return
+	}
+
+	if action != storage.ActionTypeNone {
+		t.ProcessActionUpdate(action, upd)
+		return
+	}
+
+	allowedChats := t.messagesProvider.GetAllowedChats()
+
+	if !slices.Contains(allowedChats, upd.Message.Chat.ID) {
 		return
 	}
 
 	chatInfo := upd.FromChat()
-
-	chatIds := t.messagesProvider.GetAllowedChats()
-
-	if !slices.Contains(chatIds, chatInfo.ID) {
-		return
-	}
 
 	if err := t.chatContainer.AddChatManager(ctx, chatInfo.ID); err != nil {
 		t.tgCLi.SendReplyMessageForChatId(chatInfo.ID, upd.Message.MessageID, err.Error())
 		return
 	}
 
-	var ticketModel *models.ExternalChatTicketData
-	var err error
+	ticketModel := models.BuildTicketWithText(chatInfo.ID, strconv.FormatInt(chatInfo.ID, 10), upd.Message)
 
-	if upd.FromChat().IsSuperGroup() {
-		ticketModel, err = t.handleMessageFromSuperGroup(upd)
-
-		if errors.Is(err, errorSupergroupCreated) {
-			_, _ = t.tgCLi.SendReplyMessageForChatId(chatInfo.ID, upd.Message.MessageID, "Топик успешно добавлен в настройки чата")
-			return
-		}
-	} else {
-		ticketModel = models.BuildTicketWithText(chatInfo.ID, strconv.FormatInt(chatInfo.ID, 10), upd.Message)
-	}
-
-	replyId, err := t.tgCLi.SendReplyMessageForChatId(chatInfo.ID, upd.Message.MessageID, "Your request queued...")
+	replyId, err := t.tgCLi.SendReplyMessageForChatId(chatInfo.ID, upd.Message.MessageID, "Очікуйте на виконання запиту")
 
 	if err != nil {
 		return
@@ -114,129 +120,86 @@ func (t *TelegramHandler) processUpdate(ctx context.Context, upd tgbotapi.Update
 	}
 }
 
-func (t *TelegramHandler) handleAddChatToAllowed(chatConfig tgbotapi.ChatConfig) {
-	chatInfo, err := t.tgCLi.GetChatInfoByID(chatConfig)
+func (t *TelegramHandler) ProcessActionUpdate(action storage.Action, upt tgbotapi.Update) {
+	if action == storage.ActionTypeCheckFile && upt.Message.Document != nil {
+		fileId := upt.Message.Document.FileID
 
-	if err != nil {
-		logrus.Errorf("get chat info by id err: %v", err)
-		return
-	}
-
-	if chatInfo.IsSuperGroup() {
-		chatOwner, err := t.tgCLi.GetChatOwnerId(chatInfo.ID)
+		file, err := t.tgCLi.DownloadFileById(fileId)
 
 		if err != nil {
-			logrus.Errorf("get chat owner id err: %v", err)
 			return
 		}
 
-		err = t.messagesProvider.SaveSettingsForSuperGroupChat(chatInfo.ID, &models.SuperGroupConfigModel{
-			ChatId:        chatInfo.ID,
-			OwnerId:       chatOwner,
-			SuperGroupIds: make([]int, 0),
-		})
+		hasher := crypto.SHA3_256.New()
+		hasher.Write(file)
+		hash := hasher.Sum(nil)
+
+		meta, err := t.messagesProvider.GetReportMetadata(hex.EncodeToString(hash))
 
 		if err != nil {
-			logrus.Errorf("failed save settings in redis: %v", err)
+			t.tgCLi.SendReplyMessageForChatId(upt.FromChat().ID, upt.Message.MessageID, fmt.Sprintf(
+				"\"Хєш файла %s не знайдено в сховищі\"",
+				hex.EncodeToString(hash)))
 			return
 		}
-	}
 
-	t.messagesProvider.SaveChatToAllowed(chatInfo.ID)
+		t.tgCLi.SendReplyMessageForChatId(upt.FromChat().ID, upt.Message.MessageID, fmt.Sprintf(
+			"Хєш знайдено, дата регістрації: %s, username автора: %s, хєш: %s",
+			meta.FormDate,
+			meta.Author,
+			hex.EncodeToString(hash)))
+		t.actionsProvider.SaveAction(upt.FromChat().ID, storage.ActionTypeNone)
+	}
 }
 
-func (t *TelegramHandler) handleGetAllowedChats(upd tgbotapi.Update) {
-	chats := t.messagesProvider.GetAllowedChats()
+func (t *TelegramHandler) ProcessCmdUpdate(upd tgbotapi.Update) {
+	if upd.Message.Command() == "cancel" {
+		err := t.actionsProvider.SaveAction(upd.FromChat().ID, storage.ActionTypeNone)
 
-	if len(chats) == 0 {
-		t.tgCLi.SendReplyMessageForChatId(upd.FromChat().ID, upd.Message.MessageID, "Empty allowed chats")
+		if err != nil {
+			logrus.Errorln(err.Error())
+		}
+
 		return
 	}
 
-	resp := ""
-
-	for i := range chats {
-		chatInfo, err := t.tgCLi.GetChatInfoByID(tgbotapi.ChatConfig{ChatID: chats[i]})
+	if upd.Message.Command() == "verify_file" {
+		err := t.actionsProvider.SaveAction(upd.FromChat().ID, storage.ActionTypeCheckFile)
 
 		if err != nil {
-			continue
+			logrus.Errorln(err.Error())
 		}
 
-		userInfo, err := t.tgCLi.GetChatOwnerInfo(chats[i])
+		t.tgCLi.SendReplyMessageForChatId(upd.FromChat().ID, upd.Message.MessageID, "Надішліть файл для перевірки наявності у системі")
+
+		return
+	}
+
+	if upd.Message.Command() == "form_report" {
+		allowedChats := t.messagesProvider.GetAllowedChats()
+
+		if !slices.Contains(allowedChats, upd.Message.Chat.ID) {
+			return
+		}
+
+		file, hash, err := t.chatContainer.HandleFormReport(upd.FromChat().ID)
 
 		if err != nil {
-			continue
+			logrus.Errorln(err.Error())
+			return
 		}
 
-		resp += fmt.Sprintf("\n Идентификатор чата: %d Владелец: %s Название чата: %s", chatInfo.ID, userInfo.String(), chatInfo.Title)
-	}
-
-	t.tgCLi.SendReplyMessageForChatId(upd.FromChat().ID, upd.Message.MessageID, resp)
-}
-
-func (t *TelegramHandler) handleMessageFromSuperGroup(upd tgbotapi.Update) (*models.ExternalChatTicketData, error) {
-	superGroupInfo, err := t.messagesProvider.GetSettingsForSuperGroupChat(upd.FromChat().ID)
-
-	if err != nil {
-		return nil, err
-	}
-
-	if upd.Message.Text == "" && upd.SentFrom().ID == superGroupInfo.OwnerId {
-		superGroupInfo.SuperGroupIds = append(superGroupInfo.SuperGroupIds, upd.Message.MessageID)
-
-		err = t.messagesProvider.SaveSettingsForSuperGroupChat(superGroupInfo.ChatId, superGroupInfo)
-
-		if err != nil {
-			return nil, err
+		if err = t.tgCLi.SendMessageWithFile(upd.FromChat().ID, "Звіт.pdf", file); err != nil {
+			logrus.Errorln(err.Error())
 		}
 
-		return nil, errorSupergroupCreated
-	}
-
-	if upd.Message.ReplyToMessage == nil {
-		return nil, errors.New("reply to message is empty")
-	}
-
-	if !slices.Contains(superGroupInfo.SuperGroupIds, upd.Message.ReplyToMessage.MessageID) {
-		return nil, errors.New("is not topic")
-	}
-
-	ticketModel := models.BuildTicketWithText(
-		superGroupInfo.ChatId,
-		fmt.Sprintf("%s:%s", strconv.FormatInt(superGroupInfo.ChatId, 10), strconv.FormatInt(int64(upd.Message.ReplyToMessage.MessageID), 10)),
-		upd.Message,
-	)
-
-	return ticketModel, nil
-}
-
-func (t *TelegramHandler) processCommandUpdate(upd tgbotapi.Update) error {
-	if !upd.FromChat().IsPrivate() {
-		return errorCommandAllowedOnlyPrivate
-	}
-
-	if !slices.Contains(t.cfg.AllowedUsers, upd.SentFrom().ID) {
-		return errorNotAllowedUser
-	}
-
-	switch upd.Message.Command() {
-	case "add_chat":
-		cmdArgs := upd.Message.CommandArguments()
-
-		parsedChatId, err := strconv.ParseInt(cmdArgs, 10, 64)
-
-		var cfg tgbotapi.ChatConfig
-
-		if err != nil {
-			cfg.SuperGroupUsername = cmdArgs
-		} else {
-			cfg.ChatID = parsedChatId
+		if err = t.tgCLi.SendMessage(upd.FromChat().ID, fmt.Sprintf(
+			"Хєш документа: %s \nХєш функція: SHA3-256",
+			hash,
+		)); err != nil {
+			logrus.Errorln(err.Error())
 		}
 
-		go t.handleAddChatToAllowed(cfg)
-	case "get_chats":
-		go t.handleGetAllowedChats(upd)
+		return
 	}
-
-	return nil
 }

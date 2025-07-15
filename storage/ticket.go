@@ -37,7 +37,11 @@ func (t *TicketProvider) GetTicketFromPool(chatId int64) (string, error) {
 		return "", ErrorNotFound
 	}
 
-	return result[0], t.cli.ZRem(getTicketPoolKey(chatId), result[0]).Err()
+	return result[0], nil
+}
+
+func (t *TicketProvider) DeleteTicketFromPool(chatId int64, ticketId string) error {
+	return t.cli.ZRem(getTicketPoolKey(chatId), ticketId).Err()
 }
 
 func (t *TicketProvider) GetTicketById(ticketId string) (*models.ExternalChatTicketData, error) {

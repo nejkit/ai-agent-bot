@@ -3,7 +3,6 @@ package models
 import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/google/uuid"
-	"time"
 )
 
 type MessageData struct {
@@ -18,8 +17,13 @@ const (
 	MessageTypeAssistant
 )
 
-func BuildTicketWithText(chatId int64, replyId int, message *tgbotapi.Message) *ExternalChatTicketData {
+func BuildTicketWithText(chatId int64, chatCtxKey string, message *tgbotapi.Message) *ExternalChatTicketData {
 	fileId := ""
+	text := "Проаналізуй файл"
+
+	if message.Text != "" {
+		text = message.Text
+	}
 
 	if message.Document != nil {
 		fileId = message.Document.FileID
@@ -30,29 +34,28 @@ func BuildTicketWithText(chatId int64, replyId int, message *tgbotapi.Message) *
 	}
 
 	return &ExternalChatTicketData{
-		Id:          uuid.NewString(),
-		ChatId:      chatId,
-		Status:      TicketStatusNew,
-		Action:      TicketActionValidation,
-		Type:        TicketTypeMessaging,
-		ChatContext: make([]MessageData, 0),
-		Request: RequestData{
-			Text:      message.Text,
+		Id:             uuid.NewString(),
+		ChatId:         chatId,
+		ChatContextKey: chatCtxKey,
+		Status:         TicketStatusNew,
+		Action:         TicketActionValidation,
+		Type:           TicketTypeMessaging,
+		ChatContext:    make([]MessageData, 0),
+		Request: &RequestData{
+			Text:      text,
 			FileId:    fileId,
 			MessageId: message.MessageID,
 		},
-		Response: ResponseData{
-			MessageId: replyId,
-		},
+		Response:   &ResponseData{},
+		RetryAt:    0,
 		RetryCount: 0,
-		Updated:    time.Now().UnixMilli(),
-		Expired:    time.Now().Add(time.Hour).UnixMilli(),
 	}
 }
 
 type ExternalChatTicketData struct {
-	Id     string
-	ChatId int64
+	Id             string
+	ChatId         int64
+	ChatContextKey string
 
 	Status TicketStatus
 	Action TicketAction
@@ -60,15 +63,15 @@ type ExternalChatTicketData struct {
 
 	ChatContext []MessageData
 
-	Request  RequestData
-	Response ResponseData
+	Request  *RequestData
+	Response *ResponseData
+
+	AssistantData *AssistantData
 
 	Error error
 
-	RetryCount int   // retry count if status failed inc
-	Updated    int64 // when ticket status/action updated, unix now
-
-	Expired int64 //when ticket status/action updated, change by settings
+	RetryAt    int64
+	RetryCount int
 }
 
 type RequestData struct {
@@ -83,8 +86,10 @@ type ResponseData struct {
 	MessageId   int
 }
 
-func (t *ExternalChatTicketData) UpdateTicketExpiration() {
-	t.Expired = time.Now().Add(time.Hour).UnixMilli()
+type AssistantData struct {
+	ThreadId string
+	RunId    string
+	FileId   string
 }
 
 type TicketStatus int
@@ -95,14 +100,15 @@ const (
 	TicketStatusNew TicketStatus = iota
 	TicketStatusInProgress
 	TicketStatusWaitResponse
-	TicketStatusDone
 	TicketStatusError
 )
 
 const (
 	TicketActionValidation TicketAction = iota
 	TicketActionCollectContext
+	TicketActionTransferFile
 	TicketActionSendAiRequest
+	TicketActionPullAiResponse
 	TicketActionSendTgResponse
 )
 
@@ -110,3 +116,10 @@ const (
 	TicketTypeMessaging TicketType = iota
 	TicketTypeHashingChat
 )
+
+type SuperGroupConfigModel struct {
+	ChatId  int64
+	OwnerId int64
+
+	SuperGroupIds []int
+}
